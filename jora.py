@@ -16,7 +16,8 @@ def main():
         while True:
             try:
                 priority = int(input("Priority 0 - 5: "))
-                if priority < 0 or priority > 5: raise ValueError
+                if priority < 0 or priority > 5:
+                    raise ValueError
                 break
             except ValueError:
                 print("please only enter a number from 0 to 5")
@@ -32,34 +33,28 @@ def main():
     # Delete tasks if the user would like
 
 
-def create_task(title, priortity, description, count, status="OPEN"):
-    with open(f"JORA/{status}.csv", "r", newline="") as infile:
+def create_task(title, priority, description, count, status="OPEN"):
+    file_path = f"JORA/{status}.csv"
+
+    with open(file_path, "r", newline="") as infile:
         reader = csv.reader(infile)
-        header = next(reader)
         existing_data = list(reader)
-        print("existing data :")
-        print(existing_data)
-        
-        existing_data.append([title, priortity, description, count])
-        print("existing data after append")
-        print(existing_data)
+        count = len(existing_data)
 
-    #TODO something about writing back to the file with the exisiting data is broken
-
-    with open(f"{status}.csv", "w", newline="") as outfile:
+    with open(file_path, "a", newline="") as outfile:
         writer = csv.writer(outfile)
-        writer.writerow(header)
-        writer.writerows(existing_data)
+        writer.writerow([title, priority, description, count])
 
+    print(f"Added new task #{count} to {status}")
 
 def setup():
     os.mkdir("JORA")
     with open("JORA/OPEN.csv", "w") as file:
-        writer = file.write("Title, Priority, Description, ID")
+        csv.writer = file.write("Title,Priority,Description,ID\n")
     with open("JORA/IN_PROGRESS.csv", "w") as file:
-        writer = file.write("Title, Priority, Description, ID")
+        csv.writer = file.write("Title,Priority,Description,ID\n")
     with open("JORA/CLOSED.csv", "w") as file:
-        writer = file.write("Title, Priority, Description, ID")
+        csv.writer = file.write("Title,Priority,Description,ID\n")
 
 
 main()
