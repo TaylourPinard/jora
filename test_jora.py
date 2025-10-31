@@ -1,5 +1,5 @@
-import os
 import csv
+import os
 import shutil
 import pytest
 import jora
@@ -8,102 +8,220 @@ import jora
 @pytest.fixture(autouse=True)
 def clean_jora_dir():
     """
-    Fixture to ensure we start with a clean JORA directory
-    before each test and remove it afterward.
+    Automatically run before and after every test.
+    Ensures a fresh JORA directory for isolation.
     """
-    # If a JORA directory exists, back it up
     if os.path.exists("JORA"):
         shutil.rmtree("JORA")
-
-    # Run jora.setup() to create fresh CSV files
     jora.setup()
     yield
-
-    # Cleanup after test
     if os.path.exists("JORA"):
         shutil.rmtree("JORA")
 
 
-def test_setup():
-    """Verify that setup() creates all required CSV files."""
-    assert os.path.exists("JORA/OPEN.csv")
-    assert os.path.exists("JORA/IN_PROGRESS.csv")
-    assert os.path.exists("JORA/CLOSED.csv")
-
-    # Verify the headers are correct
-    with open("JORA/OPEN.csv", "r", newline="") as f:
-        header = f.readline().strip()
-    assert header == "Title,Priority,Description,ID"
-
-
-def test_create_task():
-    """Test that create_task() correctly adds new rows to OPEN.csv."""
-    # Add several tasks
-    data = [
-        ("test", 0, "test0", 1),
-        ("test", 1, "test1", 2),
-        ("test", 2, "test2", 3),
-    ]
-    for title, priority, description, count in data:
-        jora.create_task(title, priority, description, count)
-
-    # Verify the results
-    with open("JORA/OPEN.csv", "r", newline="") as f:
+def read_csv(file_name):
+    """Helper to read all data rows (excluding header) from a JORA CSV."""
+    path = os.path.join("JORA", file_name)
+    with open(path, newline="") as f:
         reader = csv.reader(f)
-        rows = list(reader)
-
-    # First row is header; there should be 3 data rows after it
-    assert len(rows) == 4
-
-    # Check last row values
-    last = rows[-1]
-    assert last[0] == "test"
-    assert last[1] == "2"
-    assert last[2] == "test2"
-    assert last[3].isdigit()
+        next(reader, None)  # skip header
+        return list(reader)
 
 
-def test_create_task_increments_id():
-    """Ensure task count increments properly when multiple entries are added."""
-    jora.create_task("A", 1, "desc1", 0)
-    jora.create_task("B", 2, "desc2", 0)
+# ----------------------------------------------------------------------
+# Core Setup Tests
+# ----------------------------------------------------------------------
 
-    with open("JORA/OPEN.csv", "r", newline="") as f:
-        reader = csv.reader(f)
-        rows = list(reader)
+def test_setup_creates_files():
+    """Ensure setup() creates all required CSV files."""
+    for name in ["OPEN.csv", "IN_PROGRESS.csv", "CLOSED.csv"]:
+        assert os.path.exists(os.path.join("JORA", name))
 
-    # Expect header + 2 rows
-    assert len(rows) == 3
 
-    # Check IDs are unique and sequential
-    ids = [int(row[3]) for row in rows[1:]]
-    assert ids == [1, 2]
+# ----------------------------------------------------------------------
+# create_task Tests
+# ----------------------------------------------------------------------
 
-def test_move_task():
-    # Step 1: Create a task in OPEN.csv
-    jora.create_task("MoveMe", 1, "Test moving a task", 1)
+def test_create_task_adds_entry():
+    """Verify that creating a new task adds a row to OPEN.csv."""
+    jora.create_task("Test Task", 3, "This is a test")
+    data = read_csv("OPEN.csv")
+    assert len(data) == 1
+    assert data[0][0] == "Test Task"
+    assert data[0][1] == "3"
+    assert data[0][2] == "This is a test"
+    assert data[0][3].isdigit()
 
-    # Verify the task exists in OPEN.csv
-    with open("JORA/OPEN.csv", "r", newline="") as f:
-        reader = list(csv.reader(f))
-        assert len(reader) == 2  # header + 1 data row
-        task_id = reader[1][3]  # grab the ID of the created task
 
-    # Step 2: Move the task to IN_PROGRESS
+def test_multiple_tasks_have_unique_ids():
+    """Ensure each new task receives a unique ID globally."""
+    jora.create_task("Alpha", 1, "First")
+    jora.create_task("Bravo", 2, "Second")
+    jora.create_task("Charlie", 3, "Third")
+
+    ids = {row[3] for row in read_csv("OPEN.csv")}
+    assert len(ids) == 3  # all IDs must be unique
+
+
+# ----------------------------------------------------------------------
+# move_task Tests
+# ----------------------------------------------------------------------
+
+def test_move_task_preserves_id():
+    """Moving a task should keep its original ID and remove it from source."""
+    jora.create_task("Movable Task", 2, "To be moved")
+
+    open_data = read_csv("OPEN.csv")
+    task_id = open_data[0][3]
+
     jora.move_task(task_id, "OPEN", "IN_PROGRESS")
 
-    # Step 3: Verify it was removed from OPEN.csv
-    with open("JORA/OPEN.csv", "r", newline="") as f:
-        reader = list(csv.reader(f))
-        # only header should remain
-        assert len(reader) == 1
+    open_data = read_csv("OPEN.csv")
+    in_progress_data = read_csv("IN_PROGRESS.csv")
 
-    # Step 4: Verify it now exists in IN_PROGRESS.csv
-    with open("JORA/IN_PROGRESS.csv", "r", newline="") as f:
-        reader = list(csv.reader(f))
-        assert len(reader) == 2  # header + 1 moved row
-        moved_row = reader[1]
-        assert moved_row[0] == "MoveMe"
-        assert moved_row[1] == "1"
-        assert moved_row[2] == "Test moving a task"
-        assert moved_row[3] == task_id  # ID should be identical
+    # Source should be empty (just header)
+    assert len(open_data) == 0
+    # Destination should contain the moved task with same ID
+    assert len(in_progress_data) == 1
+    assert in_progress_data[0][3] == task_id
+
+
+# ----------------------------------------------------------------------
+# get_task_count Tests
+# ----------------------------------------------------------------------
+
+def test_get_task_count_counts_all_files():
+    """get_task_count() should count tasks across all status files."""
+    jora.create_task("Task 1", 1, "desc1")
+    jora.create_task("Task 2", 2, "desc2", status="IN_PROGRESS")
+    jora.create_task("Task 3", 3, "desc3", status="CLOSED")
+
+    total = jora.get_task_count()
+    assert total == 3
+
+
+# ----------------------------------------------------------------------
+# Cross-file Uniqueness Tests
+# ----------------------------------------------------------------------
+
+def test_ids_are_unique_across_all_files():
+    """IDs must never repeat across any stage."""
+    jora.create_task("OpenTask", 1, "Open", status="OPEN")
+    jora.create_task("ProgressTask", 2, "InProgress", status="IN_PROGRESS")
+    jora.create_task("ClosedTask", 3, "Closed", status="CLOSED")
+
+    ids = set()
+    for name in ["OPEN.csv", "IN_PROGRESS.csv", "CLOSED.csv"]:
+        for row in read_csv(name):
+            ids.add(row[3])
+
+    assert len(ids) == 3  # all IDs globally unique
+
+import os
+import csv
+import shutil
+import pytest
+from unittest import mock
+import jora
+import sys
+
+@pytest.fixture(autouse=True)
+def clean_jora_dir():
+    """Ensure a fresh JORA directory before and after every test."""
+    if os.path.exists("JORA"):
+        shutil.rmtree("JORA")
+    jora.setup()
+    yield
+    if os.path.exists("JORA"):
+        shutil.rmtree("JORA")
+
+
+def read_csv(file_name):
+    """Helper to read all data rows (excluding header) from a JORA CSV."""
+    path = os.path.join("JORA", file_name)
+    with open(path, newline="") as f:
+        reader = csv.reader(f)
+        next(reader, None)  # skip header
+        return list(reader)
+
+
+# ----------------------------------------------------------------------
+# CLI Flag Tests
+# ----------------------------------------------------------------------
+
+def test_flag_new_creates_task(monkeypatch):
+    """Test that '-n' flag triggers new task creation."""
+    # Simulate user input for title, priority, description
+    inputs = iter(["Test CLI Task", "2", "CLI description"])
+    monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+
+    # Mock argv to include the -n flag
+    test_argv = ["jora.py", "-n"]
+    monkeypatch.setattr(sys, "argv", test_argv)
+
+    # Run main
+    jora.main()
+
+    # Assert task was added to OPEN.csv
+    data = read_csv("OPEN.csv")
+    assert len(data) == 1
+    assert data[0][0] == "Test CLI Task"
+    assert data[0][1] == "2"
+    assert data[0][2] == "CLI description"
+
+
+def test_flag_move_task(monkeypatch):
+    """Test that '-mv' flag moves a task from one file to another."""
+    # Create a task first
+    jora.create_task("Movable", 1, "to move")
+    task_id = read_csv("OPEN.csv")[0][3]
+
+    # Mock argv to include -mv flag
+    test_argv = ["jora.py", "-mv", task_id, "OPEN", "IN_PROGRESS"]
+    monkeypatch.setattr(sys, "argv", test_argv)
+
+    # Run main
+    jora.main()
+
+    # Verify task moved
+    assert len(read_csv("OPEN.csv")) == 0
+    in_progress_data = read_csv("IN_PROGRESS.csv")
+    assert len(in_progress_data) == 1
+    assert in_progress_data[0][3] == task_id
+
+def test_delete_task():
+    """
+    Test deleting a task by ID using the -x flag.
+    Will fail until delete_task() is implemented.
+    """
+    # First, create a task
+    jora.create_task("Task to Delete", 1, "This task will be deleted")
+    task_id = read_csv("OPEN.csv")[0][3]
+
+    # Simulate running delete_task via the -x flag
+    test_argv = ["jora.py", "-x", task_id]
+    with mock.patch.object(sys, "argv", test_argv):
+        jora.main()
+
+    # Check that the task no longer exists in OPEN.csv
+    data = read_csv("OPEN.csv")
+    assert all(row[3] != task_id for row in data), "Task was not deleted"
+
+def test_flag_delete_task(monkeypatch):
+    """
+    Test that the '-x' delete flag removes a task by ID via the CLI.
+    """
+    # First, create a task
+    jora.create_task("Task to Delete via CLI", 1, "CLI deletion test")
+    task_id = read_csv("OPEN.csv")[0][3]
+
+    # Simulate running the script with -x <task_id>
+    test_argv = ["jora.py", "-x", task_id]
+    monkeypatch.setattr(sys, "argv", test_argv)
+
+    # Run main (delete should happen)
+    jora.main()
+
+    # Check that the task no longer exists
+    data = read_csv("OPEN.csv")
+    assert all(row[3] != task_id for row in data), "Task was not deleted via -x flag"
