@@ -1,2 +1,4 @@
 JORA
 !jora.py
+.pytest_cache
+__pycache__

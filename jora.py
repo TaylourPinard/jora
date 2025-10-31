@@ -73,12 +73,10 @@ def move_task(task_id, source, destination):
 
 def setup():
     os.mkdir("JORA")
-    with open("JORA/OPEN.csv", "w") as file:
-        csv.writer = file.write("Title,Priority,Description,ID\n")
-    with open("JORA/IN_PROGRESS.csv", "w") as file:
-        csv.writer = file.write("Title,Priority,Description,ID\n")
-    with open("JORA/CLOSED.csv", "w") as file:
-        csv.writer = file.write("Title,Priority,Description,ID\n")
+
+    for filename in ["OPEN.csv", "IN_PROGRESS.csv", "CLOSED.csv"]:
+        with open(f"JORA/{filename}", "w", newline="") as file:
+            file.write("Title,Priority,Description,ID\n")
 
 
 main()
