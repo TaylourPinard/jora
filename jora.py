@@ -9,13 +9,17 @@ def main():
     parser.add_argument("-n", "--new", action="store_true", help="create a new ticket")
     parser.add_argument("-mv", "--move", nargs=3, help="move a ticket. usage '-mv <id> <source_file> <destination_file>'")
     parser.add_argument("-x", "--delete", nargs=1, help="delete a ticket")
+    parser.add_argument("-s", "--show", nargs=1, help="number of tickets to show")
 
     args = parser.parse_args()
 
     if not os.path.exists("JORA"):
         setup()
 
-    if args.new or len(sys.argv) == 1:
+    if len(sys.argv) == 1:
+        show_tasks()
+
+    if args.new:
         title = input("Title: ")
         while True:
             try:
@@ -35,10 +39,9 @@ def main():
     if args.delete:
         delete_task(args.delete[0])
 
+    if args.show:
+        show_tasks(sys.argv[2])
 
-# ------------------------------------------------------
-# Core task management
-# ------------------------------------------------------
 
 def _get_next_task_id():
     """Return a globally unique ID across all CSV files."""
@@ -59,19 +62,13 @@ def _get_next_task_id():
     return max(ids) + 1 if ids else 1
 
 
-def create_task(title, priority, description, status="OPEN", task_id=None):
+def create_task(title, priority, description, task_id=None, status="OPEN"):
     """
     Create a new task in the specified CSV file.
     - If task_id is None, a new globally unique one is generated.
     - If task_id is provided, it will be preserved (used for moves).
     """
-    os.makedirs("JORA", exist_ok=True)
     file_path = f"JORA/{status}.csv"
-
-    # Create the file if it doesn’t exist
-    if not os.path.exists(file_path):
-        with open(file_path, "w", newline="") as f:
-            f.write("Title,Priority,Description,ID\n")
 
     # Determine ID
     if task_id is None:
@@ -88,6 +85,9 @@ def create_task(title, priority, description, status="OPEN", task_id=None):
 
     print(f"Added new task #{task_id} to {status}")
 
+
+# I feel like this can be refactored to take into account the current location of the task
+# and move it to the next logical destination OPEN -> IN_PROGRESS -> CLOSED
 
 def move_task(task_id, source, destination):
     """Move a task (preserving its ID) from one CSV file to another."""
@@ -122,6 +122,7 @@ def move_task(task_id, source, destination):
         writer = csv.writer(file)
         writer.writerow(header)
         writer.writerows(data)
+
 
 def delete_task(task_id):
     data = []
@@ -160,6 +161,25 @@ def get_task_count():
             count += sum(1 for _ in reader)
     return count
 
+
+def show_tasks(num=5):
+    data = []
+    with open("JORA/IN_PROGRESS.csv", "r", newline="") as file:
+        reader = csv.reader(file)
+        next(reader)
+        for entry in reader:
+            entry.append("IN_PROGRESS")
+            data.append(entry)
+    if len(data) < 5:
+        with open("JORA/OPEN.csv", "r", newline="") as file:
+            reader = csv.reader(file)
+            next(reader)
+            for entry in reader:
+                entry.append("OPEN")
+                data.append(entry)
+    sorted_data = sorted(data, key=lambda x: int(x[1]), reverse=True)
+    for i in range(min(int(num), len(sorted_data))):
+        print(f"Title: {sorted_data[i][0]}, Priority: {sorted_data[i][1]}, Status: {sorted_data[i][4]}")
 
 if __name__ == "__main__":
     main()
