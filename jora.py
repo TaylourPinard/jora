@@ -75,7 +75,7 @@ def _get_next_task_id():
     return max(ids) + 1 if ids else 1
 
 
-def create_task(title, priority, description, task_id=None, status="OPEN"):
+def create_task(title, priority, description, task_id=None, status="OPEN", verbose=True):
     """
     Create a new task in the specified CSV file.
     - If task_id is None, a new globally unique one is generated.
@@ -95,8 +95,8 @@ def create_task(title, priority, description, task_id=None, status="OPEN"):
     with open(file_path, "a", newline="", encoding="utf-8") as outfile:
         writer = csv.writer(outfile)
         writer.writerow([title, priority, description, task_id])
-
-    print(f"Added new task #{task_id} to {status}")
+    if verbose:
+        print(f"Added new task #{task_id} to {status}")
 
 
 def move_task(tasks, task_id):
