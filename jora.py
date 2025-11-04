@@ -1,3 +1,7 @@
+'''
+Jora is my implemenetation of a command line jira-style ticket tracking system using python
+'''
+
 import csv
 import sys
 import argparse
@@ -5,9 +9,12 @@ import os
 
 
 def main():
+    '''Main function'''
+
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--new", action="store_true", help="create a new task")
-    parser.add_argument("-mv", "--move", nargs=3, help="move a task. usage '-mv <id> <source_file> <destination_file>'")
+    parser.add_argument("-mv", "--move", nargs=3, help="move a task. usage " +
+        "'-mv <id> <source_file> <destination_file>'")
     parser.add_argument("-x", "--delete", nargs=1, help="delete a task")
     parser.add_argument("-s", "--show", nargs=1, help="number of tasks to show")
 
@@ -56,7 +63,7 @@ def _get_next_task_id():
         path = os.path.join("JORA", filename)
         if not os.path.exists(path):
             continue
-        with open(path, "r", newline="") as file:
+        with open(path, "r", newline="", encoding="utf-8") as file:
             reader = csv.reader(file)
             next(reader, None)  # skip header
             for row in reader:
@@ -85,7 +92,7 @@ def create_task(title, priority, description, task_id=None, status="OPEN"):
         except ValueError:
             task_id = _get_next_task_id()
 
-    with open(file_path, "a", newline="") as outfile:
+    with open(file_path, "a", newline="", encoding="utf-8") as outfile:
         writer = csv.writer(outfile)
         writer.writerow([title, priority, description, task_id])
 
@@ -103,7 +110,7 @@ def move_task(tasks, task_id):
             task = x
     if task is None:
         print("Task not found with that id")
-        return 
+        return
     match task[4]:
         case "OPEN":
             dest = "IN_PROGRESS"
@@ -117,6 +124,7 @@ def move_task(tasks, task_id):
 
 
 def delete_task(tasks, task_id):
+    '''Delete a task by its id number and purge it from the JORA files'''
     status = None
     new = []
     for task in tasks:
@@ -127,7 +135,7 @@ def delete_task(tasks, task_id):
     for task in tasks:
         if task[4] == status and task[3]!= task_id:
             new.append(task)
-    with open(f"JORA/{status}.csv", "w", newline="") as file:
+    with open(f"JORA/{status}.csv", "w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerow("Title,Priority,Description,ID\n")
         writer.writerows(new)
@@ -139,7 +147,7 @@ def setup():
     for filename in ["OPEN.csv", "IN_PROGRESS.csv", "CLOSED.csv"]:
         path = os.path.join("JORA", filename)
         if not os.path.exists(path):
-            with open(path, "w", newline="") as file:
+            with open(path, "w", newline="", encoding="utf-8") as file:
                 file.write("Title,Priority,Description,ID\n")
 
 
@@ -150,7 +158,7 @@ def get_task_count():
         path = f"JORA/{n}.csv"
         if not os.path.exists(path):
             continue
-        with open(path, "r", newline="") as file:
+        with open(path, "r", newline="", encoding="utf-8") as file:
             reader = csv.reader(file)
             next(reader, None)
             count += sum(1 for _ in reader)
@@ -167,7 +175,7 @@ def get_all_tasks(include_closed=True):
     if include_closed:
         status.append("CLOSED")
     for file_name in status:
-        with open(f"JORA/{file_name}.csv", "r", newline="") as file:
+        with open(f"JORA/{file_name}.csv", "r", newline="", encoding="utf-8") as file:
             reader = csv.reader(file)
             next(reader)
             for entry in reader:
@@ -201,7 +209,10 @@ def show_tasks(tasks, num=5):
 
     # Show up to <num> results
     for i in range(min(num, len(sorted_tasks))):
-        print(f"Title: {sorted_tasks[i][0]}, Priority: {sorted_tasks[i][1]}, Status: {sorted_tasks[i][4]}")
+        print(
+            f"Title: {sorted_tasks[i][0]}, Priority: {sorted_tasks[i][1]}," +
+            f" Status: {sorted_tasks[i][4]}"
+        )
 
 
 if __name__ == "__main__":
