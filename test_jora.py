@@ -4,13 +4,15 @@ when jora is being run as a script this is incompatible
 '''
 
 import csv
+import sys
 import os
 import shutil
 import pytest
-import sys
-from unittest import mock
 import jora
 
+# ----------------------------------------------------------------------
+# Fixture to clean up JORA directory before/after tests
+# ----------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
 def clean_jora_dir():
@@ -23,8 +25,12 @@ def clean_jora_dir():
         shutil.rmtree("JORA")
 
 
+# ----------------------------------------------------------------------
+# Helper functions
+# ----------------------------------------------------------------------
+
 def read_csv(file_name):
-    """Helper to read all data rows (excluding header) from a JORA CSV."""
+    """Read all rows excluding header."""
     path = os.path.join("JORA", file_name)
     with open(path, newline="", encoding="utf-8") as f:
         reader = csv.reader(f)
@@ -33,126 +39,81 @@ def read_csv(file_name):
 
 
 # ----------------------------------------------------------------------
-# Core setup and helper function tests
-# ----------------------------------------------------------------------
-
-def test_setup_creates_files():
-    """setup() should create all CSV files."""
-    for name in ["OPEN.csv", "IN_PROGRESS.csv", "CLOSED.csv"]:
-        assert os.path.exists(os.path.join("JORA", name))
-
-
-def test_get_all_tasks_returns_expected_data():
-    """get_all_tasks() should return tasks with status labels."""
-    jora.create_task("Test 1", 2, "desc", verbose=False)
-    jora.create_task("Test 2", 3, "desc", status="IN_PROGRESS", verbose=False)
-    jora.create_task("Test 3", 4, "desc", status="CLOSED", verbose=False)
-
-    tasks = jora.get_all_tasks()
-    statuses = [t[4] for t in tasks]
-    assert set(statuses) == {"OPEN", "IN_PROGRESS", "CLOSED"}
-    assert len(tasks) == 3
-
-
-def test_get_task_count_counts_all_files():
-    """get_task_count() should correctly count across all files."""
-    jora.create_task("One", 1, "a", verbose=False)
-    jora.create_task("Two", 2, "b", status="IN_PROGRESS", verbose=False)
-    jora.create_task("Three", 3, "c", status="CLOSED", verbose=False)
-    assert jora.get_task_count() == 3
-
-
-# ----------------------------------------------------------------------
-# create_task() tests
+# Core CRUD Tests
 # ----------------------------------------------------------------------
 
 def test_create_task_adds_entry():
-    """Creating a new task should append a row to OPEN.csv."""
-    jora.create_task("Alpha", 3, "Sample")
+    """Creating a task adds it to tasks dict and CSV."""
+    tasks = jora.load_tasks_dict()
+    jora.create_task(tasks, "Test Task", 3, "Description")
+    tasks = jora.load_tasks_dict()
+
+    # There should be exactly 1 task
+    assert len(tasks) == 1
+    tid = list(tasks.keys())[0]
+    t = tasks[tid]
+    assert t["title"] == "Test Task"
+    assert t["priority"] == 3
+    assert t["description"] == "Description"
+    assert t["status"] == "OPEN"
+
+    # Check CSV
     data = read_csv("OPEN.csv")
     assert len(data) == 1
-    assert data[0][0] == "Alpha"
-    assert data[0][1] == "3"
-    assert data[0][2] == "Sample"
-    assert data[0][3].isdigit()
+    assert data[0][3] == tid
 
 
-def test_unique_ids_across_all_files():
-    """IDs should be globally unique."""
-    jora.create_task("T1", 1, "a", status="OPEN", verbose=False)
-    jora.create_task("T2", 2, "b", status="IN_PROGRESS", verbose=False)
-    jora.create_task("T3", 3, "c", status="CLOSED", verbose=False)
-    ids = set()
-    for f in ["OPEN.csv", "IN_PROGRESS.csv", "CLOSED.csv"]:
-        for row in read_csv(f):
-            ids.add(row[3])
-    assert len(ids) == 3
+def test_unique_ids_across_files():
+    """IDs should be globally unique across all statuses."""
+    tasks = jora.load_tasks_dict()
+    jora.create_task(tasks, "Task1", 1, "A")
+    jora.create_task(tasks, "Task2", 2, "B")
+    jora.create_task(tasks, "Task3", 3, "C")
 
+    tids = list(tasks.keys())
+    assert len(tids) == len(set(tids))
 
-# ----------------------------------------------------------------------
-# move_task() tests
-# ----------------------------------------------------------------------
 
 def test_move_task_preserves_id_and_creates_in_next_stage():
-    """Moving a task should preserve its ID and advance its status."""
-    jora.create_task("MoveMe", 2, "desc", verbose=False)
-    tasks = jora.get_all_tasks()
-    task_id = tasks[0][3]
+    """Move task to next stage and preserve its ID."""
+    tasks = jora.load_tasks_dict()
+    jora.create_task(tasks, "MoveMe", 2, "desc")
+    tid = list(tasks.keys())[0]
 
-    jora.move_task(tasks, task_id)
+    jora.move_task(tasks, tid)
+    tasks = jora.load_tasks_dict()
+    assert tasks[tid]["status"] == "IN_PROGRESS"
 
-    # Verify new location
-    moved_tasks = jora.get_all_tasks()
-    moved = [t for t in moved_tasks if t[3] == task_id]
-    assert len(moved) == 1
-    assert moved[0][4] == "IN_PROGRESS"
+    jora.move_task(tasks, tid)
+    tasks = jora.load_tasks_dict()
+    assert tasks[tid]["status"] == "CLOSED"
 
-
-def test_move_task_from_in_progress_to_closed():
-    """Task in IN_PROGRESS should move to CLOSED."""
-    jora.create_task("TaskInProgress", 1, "desc", status="IN_PROGRESS", verbose=False)
-    tasks = jora.get_all_tasks()
-    task_id = [t for t in tasks if t[4] == "IN_PROGRESS"][0][3]
-
-    jora.move_task(tasks, task_id)
-
-    all_tasks = jora.get_all_tasks()
-    closed = [t for t in all_tasks if t[3] == task_id and t[4] == "CLOSED"]
-    assert len(closed) == 1
-
-
-# ----------------------------------------------------------------------
-# delete_task() tests
-# ----------------------------------------------------------------------
 
 def test_delete_task_removes_entry():
-    """delete_task() should remove a task from its current file."""
-    jora.create_task("DeleteMe", 2, "desc", verbose=False)
-    tasks = jora.get_all_tasks()
-    task_id = tasks[0][3]
+    """Delete task by ID removes it from dict and CSV."""
+    tasks = jora.load_tasks_dict()
+    jora.create_task(tasks, "DeleteMe", 1, "desc")
+    tid = list(tasks.keys())[0]
 
-    jora.delete_task(tasks, task_id)
+    jora.delete_task(tasks, tid)
+    tasks = jora.load_tasks_dict()
+    assert tid not in tasks
+    assert not read_csv("OPEN.csv")
 
-    remaining = jora.get_all_tasks()
-    assert all(t[3] != task_id for t in remaining)
-
-
-# ----------------------------------------------------------------------
-# show_tasks() tests
-# ----------------------------------------------------------------------
 
 def test_show_tasks_sorts_and_limits_output(capsys):
-    """show_tasks() should print tasks sorted by priority and limited to 5."""
-    # Suppress create_task() output during setup
-    with capsys.disabled():
-        for i in range(7):
-            jora.create_task(f"Task{i}", i % 5, f"desc{i}", verbose=False)
+    """show_tasks() prints top N tasks by priority."""
+    tasks = jora.load_tasks_dict()
+    for i in range(7):
+        jora.create_task(tasks, f"Task{i}", i % 5, f"desc{i}", False)
+    tasks = jora.load_tasks_dict()
 
-    tasks = jora.get_all_tasks()
     jora.show_tasks(tasks, num=3)
-
-    output = capsys.readouterr().out.strip().splitlines()
-    assert len(output) == 3
+    out = capsys.readouterr().out.strip().splitlines()
+    assert len(out) == 3
+    # Highest priority first
+    priorities = [int(line.split("Priority: ")[1].split(",")[0]) for line in out]
+    assert priorities == sorted(priorities, reverse=True)
 
 
 # ----------------------------------------------------------------------
@@ -160,25 +121,50 @@ def test_show_tasks_sorts_and_limits_output(capsys):
 # ----------------------------------------------------------------------
 
 def test_flag_new_creates_task(monkeypatch):
-    """'-n' flag should create a new task via CLI."""
-    inputs = iter(["CLI Task", "2", "CLI desc"])
+    """Test that '-n' creates a task via CLI."""
+    inputs = iter(["CLI Task", "2", "desc"])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
-    test_argv = ["jora.py", "-n"]
-    monkeypatch.setattr(sys, "argv", test_argv)
+    monkeypatch.setattr(sys, "argv", ["jora.py", "-n"])
 
     jora.main()
-    data = read_csv("OPEN.csv")
-    assert len(data) == 1
-    assert data[0][0] == "CLI Task"
+    tasks = jora.load_tasks_dict()
+    assert any(t["title"] == "CLI Task" for t in tasks.values())
 
 
 def test_flag_delete_task(monkeypatch):
-    """'-x' flag should delete task by ID."""
-    jora.create_task("CLI Delete", 1, "desc", verbose=False)
-    task_id = read_csv("OPEN.csv")[0][3]
+    """Test deleting a task via '-x' CLI flag."""
+    tasks = jora.load_tasks_dict()
+    jora.create_task(tasks, "ToDelete", 1, "desc")
+    tid = list(tasks.keys())[0]
 
-    test_argv = ["jora.py", "-x", task_id]
-    monkeypatch.setattr(sys, "argv", test_argv)
-
+    monkeypatch.setattr(sys, "argv", ["jora.py", "-x", tid])
     jora.main()
-    assert all(row[3] != task_id for row in read_csv("OPEN.csv"))
+
+    tasks = jora.load_tasks_dict()
+    assert tid not in tasks
+
+
+def test_flag_move_task(monkeypatch):
+    """Test moving a task via '-mv' CLI flag."""
+    tasks = jora.load_tasks_dict()
+    jora.create_task(tasks, "ToMove", 2, "desc")
+    tid = list(tasks.keys())[0]
+
+    monkeypatch.setattr(sys, "argv", ["jora.py", "-mv", tid])
+    jora.main()
+    tasks = jora.load_tasks_dict()
+    assert tasks[tid]["status"] == "IN_PROGRESS"
+
+
+def test_show_id_flag(capsys):
+    """Test showing task by ID via '-id' flag."""
+    tasks = jora.load_tasks_dict()
+    jora.create_task(tasks, "TaskShowID", 3, "desc")
+    tid = list(tasks.keys())[0]
+
+    sys.argv = ["jora.py", "-id", tid]
+    jora.main()
+    out = capsys.readouterr().out
+    assert "TaskShowID" in out
+    assert "Priority: 3" in out
+    assert "Status: OPEN" in out
