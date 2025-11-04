@@ -99,9 +99,6 @@ def create_task(title, priority, description, task_id=None, status="OPEN"):
     print(f"Added new task #{task_id} to {status}")
 
 
-# I feel like this can be refactored to take into account the current location of the task
-# and move it to the next logical destination OPEN -> IN_PROGRESS -> CLOSED
-
 def move_task(tasks, task_id):
     """Move a task (preserving its ID) from one CSV file to another."""
     task = None
