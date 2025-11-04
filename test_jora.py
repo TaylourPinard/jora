@@ -1,3 +1,8 @@
+'''
+Pytest testing suite for jora.py, only works when jora.py is present, 
+when jora is being run as a script this is incompatible
+'''
+
 import csv
 import os
 import shutil

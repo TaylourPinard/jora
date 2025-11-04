@@ -9,15 +9,21 @@ import argparse
 import os
 
 
+#TODO convert this to use a dictionary instead of an array for the data
+# the key will be the id
+
 def main():
     '''Main function'''
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--new", action="store_true", help="create a new task")
-    parser.add_argument("-mv", "--move", nargs=3, help="move a task. usage " +
-        "'-mv <id> <source_file> <destination_file>'")
+    parser.add_argument("-mv", "--move", nargs=1, help="move a task. usage '-mv <id>'")
     parser.add_argument("-x", "--delete", nargs=1, help="delete a task")
-    parser.add_argument("-s", "--show", nargs=1, help="number of tasks to show")
+    parser.add_argument("-s", "--show", nargs=1, help="number of tasks to show" +
+    " usage: '-s (optional <num>)' ")
+    parser.add_argument("-id", "--show-id", nargs=1, help="show all task info for " +
+        "the id specified. usage '-id <id>'"    
+    )
 
     args = parser.parse_args()
 
@@ -27,20 +33,14 @@ def main():
     tasks = get_all_tasks()
 
     if len(sys.argv) == 1:
-        show_tasks(tasks)
+        if len(tasks) > 0:
+            show_tasks(tasks)
+        else:
+            title, priority, description = get_task_parameters()
+            create_task(title, priority, description)
 
     if args.new:
-        title = input("Title: ")
-        while True:
-            try:
-                priority = int(input("Priority 0 - 5: "))
-                if priority < 0 or priority > 5:
-                    raise ValueError
-                break
-            except ValueError:
-                print("please only enter a number from 0 to 5")
-
-        description = input("Description: ")
+        title, priority, description = get_task_parameters()
         create_task(title, priority, description)
 
     if args.move:
@@ -55,7 +55,27 @@ def main():
         except (ValueError, IndexError):
             num = 5
         show_tasks(tasks, num)
+    if args.show_id:
+        for task in tasks:
+            if task[3] == args.show_id[0]:
+                print(f"{task[0]}\nPriority: {task[1]} status: {task[4]}")
+                print(f"{task[2]}")
 
+
+def get_task_parameters():
+    ''' helper function to get the task parameters from a user creating a new task '''
+    title = input("Title: ")
+    while True:
+        try:
+            priority = int(input("Priority 0 - 5: "))
+            if priority < 0 or priority > 5:
+                raise ValueError
+            break
+        except ValueError:
+            print("please only enter a number from 0 to 5")
+
+    description = input("Description: ")
+    return title, priority, description
 
 def _get_next_task_id():
     """Return a globally unique ID across all CSV files."""
@@ -97,7 +117,7 @@ def create_task(title, priority, description, task_id=None, status="OPEN", verbo
         writer = csv.writer(outfile)
         writer.writerow([title, priority, description, task_id])
     if verbose:
-        print(f"Added new task #{task_id} to {status}")
+        print(f"Added task {title}, with id #{task_id} to {status}")
 
 
 def move_task(tasks, task_id):
@@ -116,6 +136,10 @@ def move_task(tasks, task_id):
             dest = "CLOSED"
         case "CLOSED":
             print("Ticket is closed")
+            reopen = input("Re-open task? y/n\n").lower()
+            if reopen in ["y", "yes"]:
+                dest = "IN_PROGRESS"
+
 
     create_task(task[0], task[1], task[2], status=dest, task_id=task[3])
     delete_task(tasks, task_id)
@@ -182,7 +206,7 @@ def get_all_tasks(include_closed=True):
     return tasks
 
 
-def show_tasks(tasks, num=5):
+def show_tasks(tasks, num=5, include_closed=False):
     """
     Show the top <num> priority tasks from OPEN and IN_PROGRESS.
     Tasks are sorted by priority (descending).
@@ -200,16 +224,19 @@ def show_tasks(tasks, num=5):
         num = 5
 
     # Filter only OPEN and IN_PROGRESS tasks
-    filtered = [t for t in tasks if t[4] in ("OPEN", "IN_PROGRESS")]
+    if not include_closed:
+        filtered = [t for t in tasks if t[4] in ("OPEN", "IN_PROGRESS")]
+        sorted_tasks = sorted(filtered, key=lambda x: x[1], reverse=True)
 
     # Sort by priority (highest first)
-    sorted_tasks = sorted(filtered, key=lambda x: int(x[1]), reverse=True)
+    else:
+        sorted_tasks = sorted(tasks, key=lambda x: int(x[1]), reverse=True)
 
     # Show up to <num> results
     for i in range(min(num, len(sorted_tasks))):
         print(
             f"Title: {sorted_tasks[i][0]}, Priority: {sorted_tasks[i][1]}," +
-            f" Status: {sorted_tasks[i][4]}"
+            f" Status: {sorted_tasks[i][4]}, ID: {sorted_tasks[i][3]}"
         )
 
 
