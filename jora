@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 '''
 Jora is my implemenetation of a command line jira-style ticket tracking system using python
 '''
